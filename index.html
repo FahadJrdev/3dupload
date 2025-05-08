@@ -1,0 +1,199 @@
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Parque 3D - Con Barra de Carga Funcional</title>
+    <style>
+        body {
+            margin: 0;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        html,
+        body {
+            height: 100%;
+        }
+
+        /* 🔥 Estilos de la barra de carga */
+        #loader-container {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background: rgba(255, 255, 255, 0.9);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            font-family: Arial, sans-serif;
+        }
+
+        #progress-bar {
+            width: 40%;
+            height: 10px;
+            background: #ddd;
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        #progress-fill {
+            width: 0%;
+            height: 100%;
+            background: #4CAF50;
+            transition: width 0.2s ease-in-out;
+        }
+
+        #progress-text {
+            margin-top: 10px;
+            font-size: 16px;
+            color: #333;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- 🔥 Contenedor de la barra de carga -->
+    <div id="loader-container" style="display: none;">
+        <div id="progress-bar">
+            <div id="progress-fill" style="width: 10%;"></div>
+        </div>
+        <div id="progress-text">Cargando... 10%</div>
+    </div>
+
+    <script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+    <script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+
+    <script>
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0xffffff);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.outputEncoding = THREE.sRGBEncoding;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.1;
+        document.body.appendChild(renderer.domElement);
+
+        // 🚀 Luces
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x888888, 4.8);
+        hemiLight.position.set(0, 20, 0);
+        scene.add(hemiLight);
+
+        const directionalLightFront = new THREE.DirectionalLight(0xffffff, 2.7);
+        directionalLightFront.position.set(10, 15, 10);
+        scene.add(directionalLightFront);
+
+        const directionalLightBack = new THREE.DirectionalLight(0xffffff, 2.7);
+        directionalLightBack.position.set(-10, 15, -10);
+        scene.add(directionalLightBack);
+
+        const directionalLightLeft = new THREE.DirectionalLight(0xffffff, 2.5);
+        directionalLightLeft.position.set(-15, 10, 0);
+        scene.add(directionalLightLeft);
+
+        const directionalLightRight = new THREE.DirectionalLight(0xffffff, 2.5);
+        directionalLightRight.position.set(15, 10, 0);
+        scene.add(directionalLightRight);
+
+        // 🔥 HDRI
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        pmremGenerator.compileEquirectangularShader();
+        new THREE.TextureLoader().load('https://threejs.org/examples/textures/equirectangular/venice_sunset_1k.jpg', function (texture) {
+            const envMap = pmremGenerator.fromEquirectangular(texture).texture;
+            scene.environment = envMap;
+            scene.background = envMap;
+            texture.dispose();
+            pmremGenerator.dispose();
+        });
+
+        // 🚀 Barra de progreso manual si xhr.total = 0
+        let manualProgress = 0;
+        let progressInterval = setInterval(() => {
+            if (manualProgress < 95) {
+                manualProgress += 5;
+                document.getElementById("progress-fill").style.width = manualProgress + "%";
+                document.getElementById("progress-text").innerText = `Cargando... ${manualProgress}%`;
+            }
+        }, 500);
+
+        // 🚀 Cargar el modelo con barra de carga funcional
+        const loader = new THREE.GLTFLoader();
+        loader.load('002.glb',
+            function (gltf) {
+                clearInterval(progressInterval); // 🔥 Detiene el progreso manual
+                document.getElementById("loader-container").style.display = "none";
+
+                const model = gltf.scene;
+                scene.add(model);
+
+                // Centrar el modelo
+                const box = new THREE.Box3().setFromObject(model);
+                const center = box.getCenter(new THREE.Vector3());
+                model.position.sub(center);
+
+                // 🔥 Corregir transparencia
+                model.traverse((node) => {
+                    if (node.isMesh) {
+                        if (node.material.map && node.material.transparent) {
+                            node.material.alphaTest = 0.5;
+                            node.material.side = THREE.DoubleSide;
+                        } else {
+                            node.material.transparent = false;
+                            node.material.depthWrite = true;
+                        }
+                    }
+                });
+
+                // Mantiene la cámara sin cambios
+                controls.target.set(0, 0, 0);
+                controls.update();
+                const size = box.getSize(new THREE.Vector3()).length();
+                camera.position.set(0, size * 0.5, size * 2);
+            },
+            function (xhr) {
+                // 🔥 Si el servidor envía "Content-Length", usa el progreso real
+                if (xhr.total > 0) {
+                    const percent = (xhr.loaded / xhr.total) * 100;
+                    document.getElementById("progress-fill").style.width = percent + "%";
+                    document.getElementById("progress-text").innerText = `Cargando... ${Math.round(percent)}%`;
+                }
+            },
+            function (error) {
+                console.error("Error al cargar el modelo:", error);
+                document.getElementById("progress-text").innerText = "❌ Error al cargar el modelo.";
+            }
+        );
+
+        // 🚀 Configuración del control de órbita (sin cambios)
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.2;
+        controls.minDistance = 1;
+        controls.maxDistance = 100;
+        controls.zoomSpeed = 2.0;
+
+        function animate() {
+            requestAnimationFrame(animate);
+            controls.update();
+            renderer.render(scene, camera);
+        }
+
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+    <canvas width="415" height="897" style="display: block; width: 415px; height: 897px;"></canvas>
+
+
+</body>
+
+</html>
